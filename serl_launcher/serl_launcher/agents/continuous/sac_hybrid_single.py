@@ -310,9 +310,13 @@ class SACAgentHybridSingleArm(flax.struct.PyTreeNode):
 
         actor_objective = predicted_q - temperature * log_probs
         actor_loss = -jnp.mean(actor_objective)
+        behavior_actions = batch["actions"][..., :-1]
+        actor_anchor_loss = jnp.mean((action_distributions.mode() - behavior_actions) ** 2)
+        actor_loss = actor_loss + self.config["actor_anchor_weight"] * actor_anchor_loss
 
         info = {
             "actor_loss": actor_loss,
+            "actor_anchor_loss": actor_anchor_loss,
             "temperature": temperature,
             "entropy": -log_probs.mean(),
         }
@@ -340,7 +344,10 @@ class SACAgentHybridSingleArm(flax.struct.PyTreeNode):
             "temperature": partial(self.temperature_loss_fn, batch),
         }
 
-    @partial(jax.jit, static_argnames=("pmap_axis", "networks_to_update"))
+    @partial(
+        jax.jit,
+        static_argnames=("pmap_axis", "networks_to_update", "freeze_shared_encoder"),
+    )
     def update(
         self,
         batch: Batch,
@@ -349,6 +356,7 @@ class SACAgentHybridSingleArm(flax.struct.PyTreeNode):
         networks_to_update: FrozenSet[str] = frozenset(
             {"actor", "critic", "grasp_critic", "temperature"}
         ),
+        freeze_shared_encoder: bool = False,
         **kwargs
     ) -> Tuple["SACAgentHybridSingleArm", dict]:
         """
@@ -388,8 +396,21 @@ class SACAgentHybridSingleArm(flax.struct.PyTreeNode):
         for key in loss_fns.keys() - networks_to_update:
             loss_fns[key] = lambda params, rng: (0.0, {})
 
+        def freeze_encoder_grads(grads):
+            grads = flax.core.unfreeze(grads)
+            for optimizer_grads in grads.values():
+                for module_name in ("modules_actor", "modules_critic", "modules_grasp_critic"):
+                    if module_name in optimizer_grads and "encoder" in optimizer_grads[module_name]:
+                        optimizer_grads[module_name]["encoder"] = jax.tree_map(
+                            jnp.zeros_like, optimizer_grads[module_name]["encoder"]
+                        )
+            return grads
+
         new_state, info = self.state.apply_loss_fns(
-            loss_fns, pmap_axis=pmap_axis, has_aux=True
+            loss_fns,
+            pmap_axis=pmap_axis,
+            has_aux=True,
+            gradient_transform=freeze_encoder_grads if freeze_shared_encoder else None,
         )
 
         # Update target network (if requested)
@@ -474,6 +495,7 @@ class SACAgentHybridSingleArm(flax.struct.PyTreeNode):
         image_keys: Iterable[str] = None,
         augmentation_function: Optional[callable] = None,
         reward_bias: float = 0.0,
+        actor_anchor_weight: float = 0.0,
         **kwargs,
     ):
         networks = {
@@ -528,6 +550,7 @@ class SACAgentHybridSingleArm(flax.struct.PyTreeNode):
                 backup_entropy=backup_entropy,
                 image_keys=image_keys,
                 reward_bias=reward_bias,
+                actor_anchor_weight=actor_anchor_weight,
                 augmentation_function=augmentation_function,
                 **kwargs,
             ),
@@ -560,6 +583,7 @@ class SACAgentHybridSingleArm(flax.struct.PyTreeNode):
         temperature_init: float = 1.0,
         image_keys: Iterable[str] = ("image",),
         augmentation_function: Optional[callable] = None,
+        actor_anchor_weight: float = 0.0,
         **kwargs,
     ):
         """
@@ -658,6 +682,7 @@ class SACAgentHybridSingleArm(flax.struct.PyTreeNode):
             critic_subsample_size=critic_subsample_size,
             image_keys=image_keys,
             augmentation_function=augmentation_function,
+            actor_anchor_weight=actor_anchor_weight,
             **kwargs,
         )
 

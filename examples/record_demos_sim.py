@@ -8,7 +8,6 @@ from absl import app, flags
 import time
 
 from experiments.mappings import CONFIG_MAPPING
-from pynput import keyboard
 from franka_sim.utils.viewer_utils import DualMujocoViewer
 
 FLAGS = flags.FLAGS
@@ -32,7 +31,11 @@ def main(_):
     # Create the dual viewer
     dual_viewer = DualMujocoViewer(env.unwrapped.model, env.unwrapped.data)
 
-    print("Press shift to start recording.\nIf your controller is not working check controller_type (default is xbox) is configured in examples/experiments/pick_cube_sim/config.py")
+    print(
+        "Look at the MuJoCo windows; type WASD/FR/Space in THIS terminal. "
+        "Q discards the current episode. B ends it as failure (not saved as demo). "
+        "Only successful episodes are saved."
+    )
     with dual_viewer as viewer:
         while viewer.is_running():
             actions = np.zeros(env.action_space.sample().shape) 
@@ -57,8 +60,16 @@ def main(_):
             pbar.set_description(f"Return: {returns}")
 
             obs = next_obs
+            if info.get("withdraw"):
+                print("withdraw: discard episode and reset")
+                trajectory = []
+                returns = 0
+                obs, info = env.reset()
+                continue
             if done:
-                if info["succeed"]:
+                if info.get("human_fail"):
+                    print("human fail: drop demo episode and reset")
+                elif info["succeed"]:
                     for transition in trajectory:
                         transitions.append(copy.deepcopy(transition))
                     success_count += 1
@@ -70,10 +81,19 @@ def main(_):
             if success_count >= success_needed:
                 break
 
-    if not os.path.exists("./demo_data"):
-        os.makedirs("./demo_data")
     uuid = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    file_name = f"./demo_data/{FLAGS.exp_name}_{success_needed}_demos_{uuid}.pkl"
+    if FLAGS.exp_name == "pick_cube_sim":
+        out_dir = os.path.join(
+            os.path.dirname(__file__),
+            "experiments",
+            "pick_cube_sim",
+            "demo_data",
+        )
+        os.makedirs(out_dir, exist_ok=True)
+        file_name = os.path.join(out_dir, f"self_demo_{success_needed}_{uuid}.pkl")
+    else:
+        os.makedirs("./demo_data", exist_ok=True)
+        file_name = f"./demo_data/{FLAGS.exp_name}_{success_needed}_demos_{uuid}.pkl"
     with open(file_name, "wb") as f:
         pkl.dump(transitions, f)
         print(f"saved {success_needed} demos to {file_name}")

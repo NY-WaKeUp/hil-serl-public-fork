@@ -31,11 +31,11 @@ class PandaPickCubeGymEnv(MujocoGymEnv):
 
     def __init__(
         self,
-        action_scale: np.ndarray = np.asarray([0.05, 1]),
+        action_scale: np.ndarray = np.asarray([0.1, 1]),
         seed: int = 0,
         control_dt: float = 0.02,
         physics_dt: float = 0.002,
-        time_limit: float = 20.0,
+        time_limit: float = 10.0,
         render_spec: GymRenderingSpec = GymRenderingSpec(),
         render_mode: Literal["rgb_array", "human"] = "rgb_array",
         image_obs: bool = False,

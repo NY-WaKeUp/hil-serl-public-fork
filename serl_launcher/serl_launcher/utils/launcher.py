@@ -101,6 +101,7 @@ def make_sac_pixel_agent_hybrid_single_arm(
     reward_bias=0.0,
     target_entropy=None,
     discount=0.97,
+    actor_anchor_weight=0.0,
 ):
     agent = SACAgentHybridSingleArm.create_pixels(
         jax.random.PRNGKey(seed),
@@ -136,6 +137,7 @@ def make_sac_pixel_agent_hybrid_single_arm(
         critic_ensemble_size=2,
         critic_subsample_size=None,
         reward_bias=reward_bias,
+        actor_anchor_weight=actor_anchor_weight,
         target_entropy=target_entropy,
         augmentation_function=make_batch_augmentation_func(image_keys),
     )
