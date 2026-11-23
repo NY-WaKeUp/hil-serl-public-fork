@@ -9,9 +9,11 @@ import numpy as np
 
 from serl_launcher.vision.film_conditioning_layer import FilmConditioning
 from serl_launcher.vision.data_augmentations import resize
+
 ModuleDef = Any
 
 
+# note 在输入的通道维上额外拼接两张坐标图（x 坐标、y 坐标，归一化到 [−1,1][-1, 1][−1,1]）。
 class AddSpatialCoordinates(nn.Module):
     dtype: Any = jnp.float32
 
@@ -19,18 +21,23 @@ class AddSpatialCoordinates(nn.Module):
     def __call__(self, x):
         grid = jnp.array(
             np.stack(
-                np.meshgrid(*[np.arange(s) / (s - 1) * 2 - 1 for s in x.shape[-3:-1]]),
+                np.meshgrid(
+                    *[np.arange(s) / (s - 1) * 2 - 1 for s in x.shape[-3:-1]]
+                ),  # (W,H)
                 axis=-1,
-            ),
+            ),  # (H,W,2)
             dtype=self.dtype,
-        ).transpose(1, 0, 2)
+        ).transpose(
+            1, 0, 2
+        )  # (W,H,2)
 
         if x.ndim == 4:
-            grid = jnp.broadcast_to(grid, [x.shape[0], *grid.shape])
+            grid = jnp.broadcast_to(grid, [x.shape[0], *grid.shape])  # (B,W,H,2)
 
-        return jnp.concatenate([x, grid], axis=-1)
+        return jnp.concatenate([x, grid], axis=-1)  # (B,W,H,C+2)
 
 
+# note 把每个特征图压成一个二维关键点坐标——即该通道激活的"期望位置"。这是 Levine 等人 End-to-End Visuomotor Policies 里的经典做法
 class SpatialSoftmax(nn.Module):
     height: int
     width: int
@@ -42,7 +49,7 @@ class SpatialSoftmax(nn.Module):
 
     @nn.compact
     def __call__(self, features):
-        if self.temperature == -1:
+        if self.temperature == -1:  # note 可学习，初始化为1
             from jax.nn import initializers
 
             temperature = self.param(
@@ -56,28 +63,32 @@ class SpatialSoftmax(nn.Module):
         if no_batch_dim:
             features = features[None]
 
-        assert len(features.shape) == 4
+        assert len(features.shape) == 4  # （B,H,W,C）
         batch_size, num_featuremaps = features.shape[0], features.shape[3]
-        features = features.transpose(0, 3, 1, 2).reshape(
+        features = features.transpose(0, 3, 1, 2).reshape(  # (B,C,H,W) -> (B,C,H*W)
             batch_size, num_featuremaps, self.height * self.width
         )
 
         softmax_attention = nn.softmax(features / temperature)
-        expected_x = jnp.sum(
+        # note 用预先算好的 pos_x / pos_y（形状 H*W）做加权求和，得到每个通道的期望坐标
+        expected_x = jnp.sum(  # (H*W) -> (B,C,1) -> (B,C)
             self.pos_x * softmax_attention, axis=2, keepdims=True
         ).reshape(batch_size, num_featuremaps)
-        expected_y = jnp.sum(
+        expected_y = jnp.sum(  # (H*W) -> (B,C,1) -> (B,C)
             self.pos_y * softmax_attention, axis=2, keepdims=True
         ).reshape(batch_size, num_featuremaps)
-        expected_xy = jnp.concatenate([expected_x, expected_y], axis=1)
+        expected_xy = jnp.concatenate([expected_x, expected_y], axis=1)  # (B,2*C)
 
-        expected_xy = jnp.reshape(expected_xy, [batch_size, 2 * num_featuremaps])
+        expected_xy = jnp.reshape(
+            expected_xy, [batch_size, 2 * num_featuremaps]
+        )  # (B,2*C)
 
         if no_batch_dim:
-            expected_xy = expected_xy[0]
+            expected_xy = expected_xy[0]  # (2*C)
         return expected_xy
 
 
+# note 一种比平均池化更强的"加权空间池化"，每个通道学习 num_features 套不同的空间权重图。这是 BridgeData / 机器人预训练那一脉常用的做法。
 class SpatialLearnedEmbeddings(nn.Module):
     height: int
     width: int
@@ -89,9 +100,9 @@ class SpatialLearnedEmbeddings(nn.Module):
     @nn.compact
     def __call__(self, features):
         """
-        features is B x H x W X C
+        features is B x H x W X C # (B,H,W,C)
         """
-        kernel = self.param(
+        kernel = self.param(  # (H,W,C,num_features)
             "kernel",
             self.kernel_init,
             (self.height, self.width, self.channel, self.num_features),
@@ -105,10 +116,10 @@ class SpatialLearnedEmbeddings(nn.Module):
 
         batch_size = features.shape[0]
         assert len(features.shape) == 4
-        features = jnp.sum(
+        features = jnp.sum(  # (B,H,W,C,1) * (1,H,W,C,num_features) -> (B,H,W,C,num_features) -> (B,C,num_features)
             jnp.expand_dims(features, -1) * jnp.expand_dims(kernel, 0), axis=(1, 2)
         )
-        features = jnp.reshape(features, [batch_size, -1])
+        features = jnp.reshape(features, [batch_size, -1])  # (B,C*num_features)
 
         if no_batch_dim:
             features = features[0]
@@ -116,6 +127,8 @@ class SpatialLearnedEmbeddings(nn.Module):
         return features
 
 
+# nn.GroupNorm 通常期望 4D 输入；这里做了个小包装，让无 batch 维的单张图（3D）也能用——临时加一维、算完再去掉。RL 推理时经常会遇到单样本，这个兼容很实用。
+# 为什么用 GroupNorm 而不是 BatchNorm：RL 的 batch 很小、分布在训练中剧烈变化，BatchNorm 的滑动统计量会很不稳定；GroupNorm/LayerNorm 不依赖 batch 统计，更稳。代码里 self.norm == "batch" 直接 raise NotImplementedError 也印证了这一点。
 class MyGroupNorm(nn.GroupNorm):
     def __call__(self, x):
         if x.ndim == 3:
@@ -176,6 +189,7 @@ class BottleneckResNetBlock(nn.Module):
         y = self.act(y)
         y = self.conv(self.filters * 4, (1, 1))(y)
         y = self.norm(scale_init=nn.initializers.zeros)(y)
+        # 最后一个 norm 用 scale_init=nn.initializers.zeros​，让残差分支在初始化时输出近似 0，使整个块一开始等价于恒等映射。这是 Bag of Tricks / Goyal et al. 里著名的"zero-γ"技巧，能显著提升深层 ResNet 的训练稳定性。
 
         if residual.shape != y.shape:
             residual = self.conv(

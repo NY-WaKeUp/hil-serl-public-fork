@@ -12,17 +12,23 @@ from serl_launcher.agents.continuous.bc import BCAgent
 from serl_launcher.agents.continuous.sac import SACAgent
 from serl_launcher.agents.continuous.sac_hybrid_single import SACAgentHybridSingleArm
 from serl_launcher.agents.continuous.sac_hybrid_dual import SACAgentHybridDualArm
-from serl_launcher.vision.data_augmentations import batched_random_crop
+from serl_launcher.vision.data_augmentations import (
+    batched_random_crop,
+    batched_random_scale,
+)
 
 ##############################################################################
 
 
 def make_bc_agent(
-    seed, 
-    sample_obs, 
-    sample_action, 
-    image_keys=("image",), 
-    encoder_type="resnet-pretrained"
+    seed,
+    sample_obs,
+    sample_action,
+    image_keys=("image",),
+    encoder_type="resnet-pretrained",
+    rsa_image_keys=None,
+    rsa_scale_min=0.7,
+    rsa_scale_max=1.3,
 ):
     return BCAgent.create(
         jax.random.PRNGKey(seed),
@@ -43,7 +49,12 @@ def make_bc_agent(
         use_proprio=True,
         encoder_type=encoder_type,
         image_keys=image_keys,
-        augmentation_function=make_batch_augmentation_func(image_keys),
+        augmentation_function=make_batch_augmentation_func(
+            image_keys,
+            rsa_image_keys=rsa_image_keys,
+            rsa_scale_min=rsa_scale_min,
+            rsa_scale_max=rsa_scale_max,
+        ),
     )
 
 
@@ -56,6 +67,9 @@ def make_sac_pixel_agent(
     reward_bias=0.0,
     target_entropy=None,
     discount=0.97,
+    rsa_image_keys=None,
+    rsa_scale_min=0.7,
+    rsa_scale_max=1.3,
 ):
     agent = SACAgent.create_pixels(
         jax.random.PRNGKey(seed),
@@ -87,7 +101,12 @@ def make_sac_pixel_agent(
         critic_subsample_size=None,
         reward_bias=reward_bias,
         target_entropy=target_entropy,
-        augmentation_function=make_batch_augmentation_func(image_keys),
+        augmentation_function=make_batch_augmentation_func(
+            image_keys,
+            rsa_image_keys=rsa_image_keys,
+            rsa_scale_min=rsa_scale_min,
+            rsa_scale_max=rsa_scale_max,
+        ),
     )
     return agent
 
@@ -101,6 +120,9 @@ def make_sac_pixel_agent_hybrid_single_arm(
     reward_bias=0.0,
     target_entropy=None,
     discount=0.97,
+    rsa_image_keys=None,
+    rsa_scale_min=0.7,
+    rsa_scale_max=1.3,
 ):
     agent = SACAgentHybridSingleArm.create_pixels(
         jax.random.PRNGKey(seed),
@@ -137,7 +159,12 @@ def make_sac_pixel_agent_hybrid_single_arm(
         critic_subsample_size=None,
         reward_bias=reward_bias,
         target_entropy=target_entropy,
-        augmentation_function=make_batch_augmentation_func(image_keys),
+        augmentation_function=make_batch_augmentation_func(
+            image_keys,
+            rsa_image_keys=rsa_image_keys,
+            rsa_scale_min=rsa_scale_min,
+            rsa_scale_max=rsa_scale_max,
+        ),
     )
     return agent
 
@@ -151,6 +178,9 @@ def make_sac_pixel_agent_hybrid_dual_arm(
     reward_bias=0.0,
     target_entropy=None,
     discount=0.97,
+    rsa_image_keys=None,
+    rsa_scale_min=0.7,
+    rsa_scale_max=1.3,
 ):
     agent = SACAgentHybridDualArm.create_pixels(
         jax.random.PRNGKey(seed),
@@ -187,7 +217,12 @@ def make_sac_pixel_agent_hybrid_dual_arm(
         critic_subsample_size=None,
         reward_bias=reward_bias,
         target_entropy=target_entropy,
-        augmentation_function=make_batch_augmentation_func(image_keys),
+        augmentation_function=make_batch_augmentation_func(
+            image_keys,
+            rsa_image_keys=rsa_image_keys,
+            rsa_scale_min=rsa_scale_min,
+            rsa_scale_max=rsa_scale_max,
+        ),
     )
     return agent
 
@@ -202,17 +237,32 @@ def linear_schedule(step):
     decayed_value = init_value + (end_value - init_value) * (linear_step / decay_steps)
     return decayed_value
     
-def make_batch_augmentation_func(image_keys) -> callable:
+def make_batch_augmentation_func(
+    image_keys,
+    *,
+    rsa_image_keys=None,
+    rsa_scale_min=0.7,
+    rsa_scale_max=1.3,
+    crop_padding=4,
+) -> callable:
+    rsa_key_set = frozenset(rsa_image_keys or ())
 
     def data_augmentation_fn(rng, observations):
         for pixel_key in image_keys:
-            observations = observations.copy(
-                add_or_replace={
-                    pixel_key: batched_random_crop(
-                        observations[pixel_key], rng, padding=4, num_batch_dims=2
-                    )
-                }
+            scale_rng, crop_rng, rng = jax.random.split(rng, 3)
+            img = observations[pixel_key]
+            if pixel_key in rsa_key_set:
+                img = batched_random_scale(
+                    img,
+                    scale_rng,
+                    scale_min=rsa_scale_min,
+                    scale_max=rsa_scale_max,
+                    num_batch_dims=2,
+                )
+            img = batched_random_crop(
+                img, crop_rng, padding=crop_padding, num_batch_dims=2
             )
+            observations = observations.copy(add_or_replace={pixel_key: img})
         return observations
     
     def augment_batch(batch: Batch, rng: PRNGKey) -> Batch:

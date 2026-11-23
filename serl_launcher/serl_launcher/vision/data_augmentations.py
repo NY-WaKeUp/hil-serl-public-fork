@@ -19,6 +19,52 @@ def random_crop(img, rng, *, padding):
     return jax.lax.dynamic_slice(padded_img, crop_from, img.shape)
 
 
+def random_scale(
+    image,
+    rng,
+    *,
+    scale_min,
+    scale_max,
+):
+    """Random scale augmentation (RSA): s>1 zoom-out, s<1 zoom-in; output shape unchanged."""
+    h, w, c = image.shape
+    s = jax.random.uniform(rng, shape=(), minval=scale_min, maxval=scale_max)
+    inv_s = 1.0 / s
+    return jax.image.scale_and_translate(
+        image,
+        (h, w, c),
+        spatial_dims=(0, 1),
+        scale=jnp.array([inv_s, inv_s], dtype=jnp.float32),
+        translation=jnp.array(
+            [(1.0 - inv_s) * w / 2.0, (1.0 - inv_s) * h / 2.0],
+            dtype=jnp.float32,
+        ),
+        method="linear",
+    )
+
+
+@partial(jax.jit, static_argnames=("scale_min", "scale_max", "num_batch_dims"))
+def batched_random_scale(
+    img,
+    rng,
+    *,
+    scale_min=0.7,
+    scale_max=1.3,
+    num_batch_dims: int = 1,
+):
+    original_shape = img.shape
+    img = jnp.reshape(img, (-1, *img.shape[num_batch_dims:]))
+
+    rngs = jax.random.split(rng, img.shape[0])
+    img = jax.vmap(
+        lambda i, r: random_scale(i, r, scale_min=scale_min, scale_max=scale_max),
+        in_axes=(0, 0),
+        out_axes=0,
+    )(img, rngs)
+
+    return jnp.reshape(img, original_shape)
+
+
 @partial(jax.jit, static_argnames=("padding", "num_batch_dims"))
 def batched_random_crop(img, rng, *, padding, num_batch_dims: int = 1):
     # Flatten batch dims
@@ -34,6 +80,7 @@ def batched_random_crop(img, rng, *, padding, num_batch_dims: int = 1):
     # Restore batch dims
     img = jnp.reshape(img, original_shape)
     return img
+
 
 def resize(image, image_dim):
     assert len(image_dim) == 2
@@ -240,7 +287,7 @@ def color_transform(
     to_grayscale_prob,
     color_jitter_prob,
     apply_prob,
-    shuffle
+    shuffle,
 ):
     """Applies color jittering to a single image."""
     apply_rng, transform_rng = jax.random.split(rng)

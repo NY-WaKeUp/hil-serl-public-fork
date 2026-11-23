@@ -169,7 +169,7 @@ class JaxRLTrainState(struct.PyTreeNode):
         )
 
     def apply_loss_fns(
-        self, loss_fns: Any, pmap_axis: str = None, has_aux: bool = False
+        self, loss_fns: Any, pmap_axis: Optional[str] = None, has_aux: bool = False
     ) -> Union["JaxRLTrainState", Tuple["JaxRLTrainState", Any]]:
         """
         Convenience method to compute gradients based on `self.params` and apply
@@ -217,13 +217,21 @@ class JaxRLTrainState(struct.PyTreeNode):
         if has_aux:
             grads = jax.tree_map(lambda _, x: x[0], loss_fns, grads_and_aux)
             aux = jax.tree_map(lambda _, x: x[1], loss_fns, grads_and_aux)
+            # aux = jax.tree_map(lambda x: x[1], grads_and_aux) #! 不行，这样会把 aux 变成一个 pytree，而不是一个叶子
             return self.apply_gradients(grads=grads), aux
         else:
             return self.apply_gradients(grads=grads_and_aux)
 
     @classmethod
     def create(
-        cls, *, apply_fn, params, txs, target_params=None, rng=jax.random.PRNGKey(0), epsilon=0.0
+        cls,
+        *,
+        apply_fn,
+        params,
+        txs,
+        target_params=None,
+        rng=jax.random.PRNGKey(0),
+        epsilon=0.0,
     ):
         """
         Initializes a new train state.
