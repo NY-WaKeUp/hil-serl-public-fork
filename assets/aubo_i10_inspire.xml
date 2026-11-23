@@ -1,0 +1,223 @@
+<mujoco model="aubo_i10_inspire">
+  <compiler angle="radian" autolimits="true"/>
+
+  <default>
+    <default class="aubo">
+      <joint range="-6.2831853 6.2831853" armature="0.1" damping="20.0"/> <default class="aubo_big_joint">
+        <motor ctrlrange="-330 330" forcerange="-330 330"/>
+      </default>
+      <default class="aubo_small_joint">
+        <motor ctrlrange="-110 110" forcerange="-110 110"/>
+      </default>
+      <default class="aubo/visual">
+        <geom type="mesh" contype="0" conaffinity="0" group="1"/>
+      </default>
+      <default class="aubo/collision">
+        <geom type="mesh" contype="1" conaffinity="1" group="3" rgba="0.9373 0.2667 0.2667 1"/>
+      </default>
+    </default>
+
+    <default class="inspire">
+      <joint armature="0.1" damping="5.0" axis="-1 0 0"/>
+      <default class="inspire/visual">
+        <geom type="mesh" contype="0" conaffinity="0" group="1"/>
+      </default>
+      <default class="inspire/collision">
+        <geom type="mesh" contype="1" conaffinity="1" group="3" rgba="0.9373 0.2667 0.2667 1" 
+              friction="0.45 0.02 0.002" margin="0.002" solref="0.008 1" solimp="0.99 0.995 0.0005"/>
+      </default>
+    </default>
+  </default>
+
+  <asset>
+    <material name="shoulder_Link_mat_1" rgba="0.4118 0.4118 0.4118 1" specular="0"/>
+    <material name="shoulder_Link_mat_2" rgba="0.9098 0.5137 0 1" specular="0"/>
+    <material name="base_link_mat" rgba="1 1 1 1" specular="0"/>
+    <material name="gripper_dark_mat" rgba="0.05 0.05 0.05 1" specular="0"/>
+    <material name="flange_mat" rgba="0.502 0.502 0.502 1" specular="0"/>
+
+    <mesh name="link0_v" file="../aubo_i10_2/meshes/aubo_i10/visual/link0.obj"/>
+    <mesh name="link0_c" file="../aubo_i10_2/meshes/aubo_i10/collision/link0.STL"/>
+    <mesh name="link1_v1" file="../aubo_i10_2/meshes/aubo_i10/visual/link1_materialfbxasc032fbxasc03527.obj"/>
+    <mesh name="link1_v2" file="../aubo_i10_2/meshes/aubo_i10/visual/link1_materialfbxasc032fbxasc03528.obj"/>
+    <mesh name="link1_c" file="../aubo_i10_2/meshes/aubo_i10/collision/link1.STL"/>
+    <mesh name="link2_v1" file="../aubo_i10_2/meshes/aubo_i10/visual/link2_materialfbxasc032fbxasc03528.obj"/>
+    <mesh name="link2_v2" file="../aubo_i10_2/meshes/aubo_i10/visual/link2_materialfbxasc032fbxasc03529.obj"/>
+    <mesh name="link2_c" file="../aubo_i10_2/meshes/aubo_i10/collision/link2.STL"/>
+    <mesh name="link3_v1" file="../aubo_i10_2/meshes/aubo_i10/visual/link3_materialfbxasc032fbxasc03527.obj"/>
+    <mesh name="link3_v2" file="../aubo_i10_2/meshes/aubo_i10/visual/link3_materialfbxasc032fbxasc03528.obj"/>
+    <mesh name="link3_c" file="../aubo_i10_2/meshes/aubo_i10/collision/link3.STL"/>
+    <mesh name="link4_v1" file="../aubo_i10_2/meshes/aubo_i10/visual/link4_materialfbxasc032fbxasc03527.obj"/>
+    <mesh name="link4_v2" file="../aubo_i10_2/meshes/aubo_i10/visual/link4_materialfbxasc032fbxasc03528.obj"/>
+    <mesh name="link4_c" file="../aubo_i10_2/meshes/aubo_i10/collision/link4.STL"/>
+    <mesh name="link5_v1" file="../aubo_i10_2/meshes/aubo_i10/visual/link5_materialfbxasc032fbxasc03527.obj"/>
+    <mesh name="link5_v2" file="../aubo_i10_2/meshes/aubo_i10/visual/link5_materialfbxasc032fbxasc03528.obj"/>
+    <mesh name="link5_c" file="../aubo_i10_2/meshes/aubo_i10/collision/link5.STL"/>
+    <mesh name="link6_v" file="../aubo_i10_2/meshes/aubo_i10/visual/link6.obj"/>
+    <mesh name="link6_c" file="../aubo_i10_2/meshes/aubo_i10/collision/link6.STL"/>
+    <mesh name="gripper_base" file="meshes/gripper_base_link.STL"/>
+    <mesh name="gripper_L1" file="meshes/gripper_Link1.STL"/>
+    <mesh name="gripper_L2" file="meshes/gripper_Link2.STL"/>
+    <mesh name="gripper_L3" file="meshes/gripper_Link3.STL"/>
+    <mesh name="gripper_L4" file="meshes/gripper_Link4.STL"/>
+  </asset>
+
+  <worldbody>
+    <body name="aubo_base_link" childclass="aubo">
+      <inertial pos="0.000136 0.001601 0.018986" mass="2.592" fullinertia="0.008524 0.007934 0.015304 -0.000001 -0.000005 -0.000081"/>
+      <geom class="aubo/visual" material="base_link_mat" mesh="link0_v"/>
+      <geom class="aubo/collision" mesh="link0_c" quat="0.7002416 0 0 -0.7139059"/>
+      
+      <body name="shoulder_Link" pos="0 0 0.1632">
+        <joint name="joint1" axis="0 0 1"/>
+        <inertial pos="-0.000004 0.005112 -0.026275" mass="10.180139" fullinertia="0.043326 0.042233 0.029902 0.000003 0.000003 -0.001767"/>
+        <geom class="aubo/visual" material="shoulder_Link_mat_1" mesh="link1_v1"/>
+        <geom class="aubo/visual" material="shoulder_Link_mat_2" mesh="link1_v2"/>
+        <geom class="aubo/collision" mesh="link1_c"/>
+        
+        <body name="upperArm_Link" pos="0 0.2013 0" quat="0.5 -0.5 -0.5 -0.5">
+          <joint name="joint2" axis="0 0 1"/>
+          <inertial pos="0.231117 -0.000013 -0.022852" mass="18.096361" fullinertia="0.064904 1.524623 1.505664 0.00003 -0.033711 0.000015"/>
+          <geom class="aubo/visual" material="shoulder_Link_mat_1" mesh="link2_v1"/>
+          <geom class="aubo/visual" material="shoulder_Link_mat_2" mesh="link2_v2"/>
+          <geom class="aubo/collision" mesh="link2_c"/>
+          
+          <body name="foreArm_Link" pos="0.647 0 0" quat="0 -1 0 0">
+            <joint name="joint3" axis="0 0 1"/>
+            <inertial pos="0.41956 -0.000019 0.118053" mass="4.448092" fullinertia="0.006799 0.246194 0.24479 0.000016 0.004004 0.000005"/>
+            <geom class="aubo/visual" material="shoulder_Link_mat_2" mesh="link3_v1"/>
+            <geom class="aubo/visual" material="shoulder_Link_mat_1" mesh="link3_v2"/>
+            <geom class="aubo/collision" mesh="link3_c"/>
+            
+            <body name="wrist1_Link" pos="0.6005 0 0" quat="0 0.7071068 0.7071068 0">
+              <joint name="joint4" axis="0 0 1"/>
+              <inertial pos="0.000047 0.009773 -0.005726" mass="1.79166" fullinertia="0.002457 0.00159 0.002183 0.000004 0.000001 -0.000123"/>
+              <geom class="aubo/visual" material="shoulder_Link_mat_2" mesh="link4_v1"/>
+              <geom class="aubo/visual" material="shoulder_Link_mat_1" mesh="link4_v2"/>
+              <geom class="aubo/collision" mesh="link4_c"/>
+              
+              <body name="wrist2_Link" pos="0 0.1025 0" quat="0.7071068 -0.7071068 0 0">
+                <joint name="joint5" axis="0 0 1"/>
+                <inertial pos="-0.000038 -0.011278 -0.001539" mass="1.628022" fullinertia="0.001951 0.001154 0.001931 0.000003 -0.000001 0.000042"/>
+                <geom class="aubo/visual" material="shoulder_Link_mat_2" mesh="link5_v1"/>
+                <geom class="aubo/visual" material="shoulder_Link_mat_1" mesh="link5_v2"/>
+                <geom class="aubo/collision" mesh="link5_c"/>
+                
+                <body name="wrist3_Link" pos="0 -0.094 0" quat="0.7071068 0.7071068 0 0">
+                  <joint name="joint6" axis="0 0 1"/>
+                  <inertial pos="0.000022 0.0006 -0.017081" mass="0.1978" fullinertia="0.000118 0.000112 0.000184 0 0 0.000001"/>
+                  <geom class="aubo/visual" material="base_link_mat" mesh="link6_v"/>
+                  <geom class="aubo/collision" mesh="link6_c"/>
+                  
+                  <body name="attachment" pos="0 0 0" childclass="inspire">
+                    <site name="attachment_site" pos="0 0 0" quat="0 0 0 1"/>
+                    <inertial pos="0 0 0.005" mass="0.05" diaginertia="0.00001 0.00001 0.00001"/>
+                    <geom class="inspire/visual" type="cylinder" material="flange_mat" size="0.04 0.005" pos="0 0 0.005"/>
+                    <geom class="inspire/collision" type="cylinder" size="0.04 0.005" pos="0 0 0.005" margin="0.001"/>
+                    
+                    <body name="gripper_base" pos="0 0 0.01">
+                      <inertial pos="-0.0000027 0.0000143 -0.040955" mass="0.075349" diaginertia="0.0000697 0.0000604 0.0000192"/>
+                      <geom class="inspire/visual" material="gripper_dark_mat" mesh="gripper_base"/>
+                      <geom class="inspire/collision" mesh="gripper_base"/>
+                      
+                      <site name="pinch" pos="0 0 0.145" size="0.005" rgba="0.9 0.9 0.9 1" group="4"/>
+                      
+                      <body name="wrist_cam_bracket" pos="-0.1 0 0.1">
+                        <inertial pos="0 0 0" mass="0.001" diaginertia="1e-9 1e-9 1e-9"/>
+                        <geom type="box" size="0.018 0.012 0.022" pos="0 0 0.018" rgba="0.18 0.18 0.2 1" contype="0" conaffinity="0"/>
+                        <camera name="handcam_rgb" pos="0.0045 0 0.0065" xyaxes="0 -1 0 -0.823 0 0.567" fovy="62"/>
+                      </body>
+                      
+                      <body name="gripper_Link1" pos="0 -0.04 0.09" quat="0.9076481 0.419732 0 0">
+                        <joint name="rh_r1" range="0 0.8663"/>
+                        <inertial pos="0.0001 0.0085832 0.013664" mass="0.0024857" diaginertia="0.0000006 0.0000005 0.0000003"/>
+                        <geom class="inspire/visual" material="gripper_dark_mat" mesh="gripper_L1"/>
+                        <geom class="inspire/collision" mesh="gripper_L1"/>
+                        
+                        <body name="gripper_Link2" pos="0 0.022341 0.035565" quat="0.9076481 -0.419732 0 0">
+                          <joint name="rh_r2" range="-0.8663 0"/>
+                          <inertial pos="0.0001 0.011846 0.011367" mass="0.0044927" diaginertia="0.0000004 0.0000004 0.0000002"/>
+                          <geom class="inspire/visual" material="gripper_dark_mat" mesh="gripper_L2"/>
+                          <geom class="inspire/collision" mesh="gripper_L2"/>
+                        </body>
+                      </body>
+                      
+                      <body name="gripper_Link3" pos="0 0.04 0.09" quat="0.9076481 -0.419732 0 0">
+                        <joint name="rh_l1" range="-0.8663 0"/>
+                        <inertial pos="0.0001 -0.0085832 0.013664" mass="0.0024857" diaginertia="0.0000006 0.0000005 0.0000003"/>
+                        <geom class="inspire/visual" material="gripper_dark_mat" mesh="gripper_L3"/>
+                        <geom class="inspire/collision" mesh="gripper_L3"/>
+                        
+                        <body name="tcp_link" pos="0 -0.022341 0.035565" quat="0.9076481 0.419732 0 0">
+                          <joint name="rh_l2" range="0 0.8663"/>
+                          <inertial pos="0.0001 -0.011846 0.011367" mass="0.0044926" diaginertia="0.0000004 0.0000004 0.0000002"/>
+                          <geom class="inspire/visual" material="gripper_dark_mat" mesh="gripper_L4"/>
+                          <geom class="inspire/collision" mesh="gripper_L4"/>
+                        </body>
+                      </body>
+                    </body>
+                  </body>
+                </body>
+              </body>
+            </body>
+          </body>
+        </body>
+      </body>
+    </body>
+  </worldbody>
+
+  <equality>
+    <joint name="rh_r2_mimic" joint1="rh_r2" joint2="rh_r1" polycoef="0 -1 0 0 0" solimp="0.95 0.99 0.001" solref="0.005 1"/>
+    <joint name="rh_l1_mimic" joint1="rh_l1" joint2="rh_r1" polycoef="0 -1 0 0 0" solimp="0.95 0.99 0.001" solref="0.005 1"/>
+    <joint name="rh_l2_mimic" joint1="rh_l2" joint2="rh_r1" polycoef="0 1 0 0 0" solimp="0.95 0.99 0.001" solref="0.005 1"/>
+  </equality>
+
+  <tendon>
+    <fixed name="split">
+      <joint joint="rh_r1" coef="0.5"/>
+      <joint joint="rh_l1" coef="0.5"/>
+    </fixed>
+  </tendon>
+
+  <actuator>
+    <motor name="actuator1" joint="joint1" class="aubo_big_joint"/>
+    <motor name="actuator2" joint="joint2" class="aubo_big_joint"/>
+    <motor name="actuator3" joint="joint3" class="aubo_big_joint"/>
+    <motor name="actuator4" joint="joint4" class="aubo_small_joint"/>
+    <motor name="actuator5" joint="joint5" class="aubo_small_joint"/>
+    <motor name="actuator6" joint="joint6" class="aubo_small_joint"/>
+    
+    <general class="inspire" name="fingers_actuator" tendon="split" forcerange="-50 50" ctrlrange="0 255"
+             gainprm="0.5 0 0" biasprm="0 -20 -2"/>
+  </actuator>
+
+  <sensor>
+    <jointpos name="aubo/joint1_pos" joint="joint1"/>
+    <jointpos name="aubo/joint2_pos" joint="joint2"/>
+    <jointpos name="aubo/joint3_pos" joint="joint3"/>
+    <jointpos name="aubo/joint4_pos" joint="joint4"/>
+    <jointpos name="aubo/joint5_pos" joint="joint5"/>
+    <jointpos name="aubo/joint6_pos" joint="joint6"/>
+    
+    <jointvel name="aubo/joint1_vel" joint="joint1"/>
+    <jointvel name="aubo/joint2_vel" joint="joint2"/>
+    <jointvel name="aubo/joint3_vel" joint="joint3"/>
+    <jointvel name="aubo/joint4_vel" joint="joint4"/>
+    <jointvel name="aubo/joint5_vel" joint="joint5"/>
+    <jointvel name="aubo/joint6_vel" joint="joint6"/>
+    
+    <torque name="aubo/joint1_torque" site="joint1"/>
+    <torque name="aubo/joint2_torque" site="joint2"/>
+    <torque name="aubo/joint3_torque" site="joint3"/>
+    <torque name="aubo/joint4_torque" site="joint4"/>
+    <torque name="aubo/joint5_torque" site="joint5"/>
+    <torque name="aubo/joint6_torque" site="joint6"/>
+
+    <force name="aubo/wrist_force" site="attachment_site"/>
+
+    <framepos name="inspire/pinch_pos" objtype="site" objname="pinch"/>
+    <framequat name="inspire/pinch_quat" objtype="site" objname="pinch"/>
+    <framelinvel name="inspire/pinch_vel" objtype="site" objname="pinch"/>
+    <frameangvel name="inspire/pinch_angvel" objtype="site" objname="pinch"/>
+  </sensor>
+</mujoco>

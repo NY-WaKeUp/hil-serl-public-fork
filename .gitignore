@@ -1,0 +1,17 @@
+doc/
+tiktoken_cache/
+
+# --- 本地大文件/历史（不公开） ---
+checkpoints/
+demo_data/
+examples/checkpoints/
+examples/demo_data/
+small_ckpt.orbax/
+*.npz
+*.mp4
+*.ckpt
+openpi-cache/
+python3.x/
+.history/
+.specstory/
+.vscode/

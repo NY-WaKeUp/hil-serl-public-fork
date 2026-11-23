@@ -1,0 +1,7 @@
+{
+  "include": ["examples", "serl_launcher", "serl_robot_infra"],
+  "extraPaths": ["serl_launcher", "serl_robot_infra", "examples"],
+  "venvPath": ".",
+  "venv": ".venv",
+  "typeCheckingMode": "off"
+}
