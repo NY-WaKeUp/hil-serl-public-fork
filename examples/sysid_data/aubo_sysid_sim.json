@@ -1,0 +1,23 @@
+{
+  "platform": "sim",
+  "profile_name": "default_v1",
+  "seed": 0,
+  "policy_hz": 10.0,
+  "max_lin_vel": 0.02,
+  "max_ang_vel": 0.1,
+  "vel_ema_alpha": 0.08,
+  "num_steps": 225,
+  "duration_s": 22.5,
+  "q0": [
+    -1.0596498250961304,
+    -0.4908320903778076,
+    1.3206543922424316,
+    0.2366071194410324,
+    1.5707952976226807,
+    0.5111851692199707,
+    3.392319740669336e-07
+  ],
+  "robot_ip": null,
+  "use_ros_gripper": null,
+  "recorded_at": "2026-06-21T22:49:59"
+}

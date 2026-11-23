@@ -32,7 +32,7 @@ from serl_launcher.utils.launcher import (
 )
 from serl_launcher.data.data_store import MemoryEfficientReplayBufferDataStore
 
-from experiments.mappings import CONFIG_MAPPING
+from experiments.mappings import CONFIG_MAPPING, get_train_config
 
 FLAGS = flags.FLAGS
 
@@ -67,6 +67,7 @@ def print_green(x):
 def actor(agent, data_store, intvn_data_store, env, sampling_rng):
     """
     This is the actor loop, which runs when "--actor" is set to True.
+    ACTOR 即 Client
     """
     if FLAGS.eval_checkpoint_step:
         success_counter = 0
@@ -86,9 +87,7 @@ def actor(agent, data_store, intvn_data_store, env, sampling_rng):
             while not done:
                 sampling_rng, key = jax.random.split(sampling_rng)
                 actions = agent.sample_actions(
-                    observations=jax.device_put(obs),
-                    argmax=False,
-                    seed=key
+                    observations=jax.device_put(obs), argmax=False, seed=key
                 )
                 actions = np.asarray(jax.device_get(actions))
 
@@ -108,12 +107,15 @@ def actor(agent, data_store, intvn_data_store, env, sampling_rng):
         print(f"success rate: {success_counter / FLAGS.eval_n_trajs}")
         print(f"average time: {np.mean(time_list)}")
         return  # after done eval, return and exit
-    
-    start_step = (
-        int(os.path.basename(natsorted(glob.glob(os.path.join(FLAGS.checkpoint_path, "buffer/*.pkl")))[-1])[12:-4]) + 1
-        if FLAGS.checkpoint_path and os.path.exists(FLAGS.checkpoint_path)
-        else 0
-    )
+
+    if FLAGS.checkpoint_path and os.path.exists(FLAGS.checkpoint_path):
+        buffer_files = glob.glob(os.path.join(FLAGS.checkpoint_path, "buffer/*.pkl"))
+        if buffer_files:
+            start_step = int(os.path.basename(natsorted(buffer_files)[-1])[12:-4]) + 1
+        else:
+            start_step = 0
+    else:
+        start_step = 0
 
     datastore_dict = {
         "actor_env": data_store,
@@ -130,10 +132,14 @@ def actor(agent, data_store, intvn_data_store, env, sampling_rng):
     )
 
     # Function to update the agent with new params
+    # note 更新 agent 的参数
     def update_params(params):
-        nonlocal agent
-        agent = agent.replace(state=agent.state.replace(params=params))
+        nonlocal agent  # 关键字允许闭包内部修改外部作用域的agent变量
+        agent = agent.replace(
+            state=agent.state.replace(params=params)
+        )  # 通过 Flax 的 .replace() 方法，actor 在内存中用最新的权重替换旧权重，实现了策略的无缝热更新。
 
+    # note 接收 learner 发送的网络参数
     client.recv_network_callback(update_params)
 
     transitions = []
@@ -152,7 +158,10 @@ def actor(agent, data_store, intvn_data_store, env, sampling_rng):
     pbar = tqdm.tqdm(range(start_step, config.max_steps), dynamic_ncols=True)
     for step in pbar:
         timer.tick("total")
-
+        # check: actor 首先判断是否处于预热期。如果是，则在动作空间中执行纯随机采样以丰富初始状态的覆盖率。
+        # check: 预热结束后，调用 agent.sample_actions 获取动作。
+        # check: argmax=False 确保采样是从策略的概率分布中提取，保留了 SAC 算法所需的探索噪声（Exploration Noise）。
+        # check: 最后，将 JAX 的 DeviceArray 转换回普通的 NumPy 数组，以便 Gymnasium 环境能够识别。
         with timer.context("sample_actions"):
             if step < config.random_steps:
                 actions = env.action_space.sample()
@@ -193,8 +202,8 @@ def actor(agent, data_store, intvn_data_store, env, sampling_rng):
                 masks=1.0 - done,
                 dones=done,
             )
-            if 'grasp_penalty' in info:
-                transition['grasp_penalty']= info['grasp_penalty']
+            if "grasp_penalty" in info:
+                transition["grasp_penalty"] = info["grasp_penalty"]
             data_store.insert(transition)
             transitions.append(copy.deepcopy(transition))
             if already_intervened:
@@ -245,15 +254,22 @@ def actor(agent, data_store, intvn_data_store, env, sampling_rng):
 def learner(rng, agent, replay_buffer, demo_buffer, wandb_logger=None):
     """
     The learner loop, which runs when "--learner" is set to True.
+    Learner 即 Server
     """
-    start_step = (
-        int(os.path.basename(checkpoints.latest_checkpoint(os.path.abspath(FLAGS.checkpoint_path)))[11:])
-        + 1
-        if FLAGS.checkpoint_path and os.path.exists(FLAGS.checkpoint_path)
-        else 0
-    )
+    # note 断点续训
+    if FLAGS.checkpoint_path and os.path.exists(FLAGS.checkpoint_path):
+        latest_ckpt = checkpoints.latest_checkpoint(
+            os.path.abspath(FLAGS.checkpoint_path)
+        )
+        if latest_ckpt is not None:
+            start_step = int(os.path.basename(latest_ckpt)[11:]) + 1
+        else:
+            start_step = 0
+    else:
+        start_step = 0
     step = start_step
 
+    # check learner接收到actor发送的stats，用于wandb logging
     def stats_callback(type: str, payload: dict) -> dict:
         """Callback for when server receives stats request."""
         assert type == "send-stats", f"Invalid request type: {type}"
@@ -303,20 +319,26 @@ def learner(rng, agent, replay_buffer, demo_buffer, wandb_logger=None):
 
     # wait till the replay buffer is filled with enough data
     timer = Timer()
-    
+
     if isinstance(agent, SACAgent):
         train_critic_networks_to_update = frozenset({"critic"})
         train_networks_to_update = frozenset({"critic", "actor", "temperature"})
     else:
         train_critic_networks_to_update = frozenset({"critic", "grasp_critic"})
-        train_networks_to_update = frozenset({"critic", "grasp_critic", "actor", "temperature"})
-
+        train_networks_to_update = frozenset(
+            {"critic", "grasp_critic", "actor", "temperature"}
+        )
+    # note CTA（Critic To Actor） 技术 在 critic 上进行多次更新，然后进行一次 critic + actor 更新
+    # note 在标准的 SAC 算法中，Actor（策略网络）的更新严重依赖于 Critic（价值网络）提供的梯度。如果 Critic 尚未收敛，Actor 就会朝着错误的方向更新。
+    # note 因此，内层循环首先单独更新 Critic 网络 config.cta_ratio - 1 次（通常为 3 到 7 次）。在外层循环的最后一次，才对 Critic、Actor 和 Temperature（温度系数 α\alphaα）进行一次联合更新。这种非对称更新频率显著提升了算法在复杂高维视觉输入下的稳定性。
     for step in tqdm.tqdm(
         range(start_step, config.max_steps), dynamic_ncols=True, desc="learner"
     ):
         # run n-1 critic updates and 1 critic + actor update.
         # This makes training on GPU faster by reducing the large batch transfer time from CPU to GPU
-        for critic_step in range(config.cta_ratio - 1):
+        for critic_step in range(
+            config.cta_ratio - 1
+        ):  # ? cta_ratio = 2, 进行一次 critic 更新
             with timer.context("sample_replay_buffer"):
                 batch = next(replay_iterator)
                 demo_batch = next(demo_iterator)
@@ -327,7 +349,7 @@ def learner(rng, agent, replay_buffer, demo_buffer, wandb_logger=None):
                     batch,
                     networks_to_update=train_critic_networks_to_update,
                 )
-
+        # note 进行一次 critic + actor 更新
         with timer.context("train"):
             batch = next(replay_iterator)
             demo_batch = next(demo_iterator)
@@ -336,12 +358,12 @@ def learner(rng, agent, replay_buffer, demo_buffer, wandb_logger=None):
                 batch,
                 networks_to_update=train_networks_to_update,
             )
-        # publish the updated network
+        # publish the updated network 每 50 步发布一次网络
         if step > 0 and step % (config.steps_per_update) == 0:
             agent = jax.block_until_ready(agent)
             server.publish_network(agent.state.params)
 
-        if step % config.log_period == 0 and wandb_logger:
+        if step % config.log_period == 0 and wandb_logger:  # 每 10 步记录一次日志
             wandb_logger.log(update_info, step=step)
             wandb_logger.log({"timer": timer.get_average_times()}, step=step)
 
@@ -360,7 +382,7 @@ def learner(rng, agent, replay_buffer, demo_buffer, wandb_logger=None):
 
 def main(_):
     global config
-    config = CONFIG_MAPPING[FLAGS.exp_name]()
+    config = get_train_config(FLAGS.exp_name)
 
     assert config.batch_size % num_devices == 0
     # seed
@@ -376,35 +398,48 @@ def main(_):
     env = RecordEpisodeStatistics(env)
 
     rng, sampling_rng = jax.random.split(rng)
-    
-    if config.setup_mode == 'single-arm-fixed-gripper' or config.setup_mode == 'dual-arm-fixed-gripper':   
-        agent: SACAgent = make_sac_pixel_agent(
+    # check Hybrid 变体，有 grasp_critic 没有为gripper单分出来一个网络
+    agent: SACAgent | SACAgentHybridSingleArm | SACAgentHybridDualArm
+    if (
+        config.setup_mode == "single-arm-fixed-gripper"
+        or config.setup_mode == "dual-arm-fixed-gripper"
+    ):
+        agent = make_sac_pixel_agent(
             seed=FLAGS.seed,
             sample_obs=env.observation_space.sample(),
             sample_action=env.action_space.sample(),
             image_keys=config.image_keys,
             encoder_type=config.encoder_type,
             discount=config.discount,
+            rsa_image_keys=config.rsa_image_keys,
+            rsa_scale_min=config.rsa_scale_min,
+            rsa_scale_max=config.rsa_scale_max,
         )
         include_grasp_penalty = False
-    elif config.setup_mode == 'single-arm-learned-gripper':
-        agent: SACAgentHybridSingleArm = make_sac_pixel_agent_hybrid_single_arm(
+    elif config.setup_mode == "single-arm-learned-gripper":
+        agent = make_sac_pixel_agent_hybrid_single_arm(
             seed=FLAGS.seed,
             sample_obs=env.observation_space.sample(),
             sample_action=env.action_space.sample(),
             image_keys=config.image_keys,
             encoder_type=config.encoder_type,
             discount=config.discount,
+            rsa_image_keys=config.rsa_image_keys,
+            rsa_scale_min=config.rsa_scale_min,
+            rsa_scale_max=config.rsa_scale_max,
         )
         include_grasp_penalty = True
-    elif config.setup_mode == 'dual-arm-learned-gripper':
-        agent: SACAgentHybridDualArm = make_sac_pixel_agent_hybrid_dual_arm(
+    elif config.setup_mode == "dual-arm-learned-gripper":
+        agent = make_sac_pixel_agent_hybrid_dual_arm(
             seed=FLAGS.seed,
             sample_obs=env.observation_space.sample(),
             sample_action=env.action_space.sample(),
             image_keys=config.image_keys,
             encoder_type=config.encoder_type,
             discount=config.discount,
+            rsa_image_keys=config.rsa_image_keys,
+            rsa_scale_min=config.rsa_scale_min,
+            rsa_scale_max=config.rsa_scale_max,
         )
         include_grasp_penalty = True
     else:
@@ -412,21 +447,27 @@ def main(_):
 
     # replicate agent across devices
     # need the jnp.array to avoid a bug where device_put doesn't recognize primitives
-    agent = jax.device_put(
-        jax.tree_map(jnp.array, agent), sharding.replicate()
-    )
-
-    if FLAGS.checkpoint_path is not None and os.path.exists(FLAGS.checkpoint_path):
-        input("Checkpoint path already exists. Press Enter to resume training.")
-        ckpt = checkpoints.restore_checkpoint(
-            os.path.abspath(FLAGS.checkpoint_path),
-            agent.state,
-        )
-        agent = agent.replace(state=ckpt)
-        ckpt_number = os.path.basename(
-            checkpoints.latest_checkpoint(os.path.abspath(FLAGS.checkpoint_path))
-        )[11:]
-        print_green(f"Loaded previous checkpoint at step {ckpt_number}.")
+    agent = jax.device_put(jax.tree_map(jnp.array, agent), sharding.replicate())
+    # note 断点续训
+    if (
+        FLAGS.checkpoint_path is not None
+        and os.path.exists(FLAGS.checkpoint_path)
+        and not FLAGS.eval_checkpoint_step
+    ):
+        ckpt_dir = os.path.abspath(FLAGS.checkpoint_path)
+        if checkpoints.latest_checkpoint(ckpt_dir) is not None:
+            input("Checkpoint path already exists. Press Enter to resume training.")
+            ckpt = checkpoints.restore_checkpoint(
+                ckpt_dir,
+                agent.state,
+            )
+            agent = agent.replace(state=ckpt)
+            latest_ckpt = checkpoints.latest_checkpoint(ckpt_dir)
+            assert latest_ckpt is not None
+            ckpt_number = os.path.basename(latest_ckpt)[11:]
+            print_green(f"Loaded previous checkpoint at step {ckpt_number}.")
+        else:
+            print_green("Checkpoint directory exists but is empty. Starting fresh.")
 
     def create_replay_buffer_and_wandb_logger():
         replay_buffer = MemoryEfficientReplayBufferDataStore(
@@ -444,6 +485,7 @@ def main(_):
         )
         return replay_buffer, wandb_logger
 
+    # note learner
     if FLAGS.learner:
         sampling_rng = jax.device_put(sampling_rng, device=sharding.replicate())
         replay_buffer, wandb_logger = create_replay_buffer_and_wandb_logger()
@@ -454,18 +496,20 @@ def main(_):
             image_keys=config.image_keys,
             include_grasp_penalty=include_grasp_penalty,
         )
-
+        # note demo buffer的填充，离线专家演示
         assert FLAGS.demo_path is not None
         for path in FLAGS.demo_path:
             with open(path, "rb") as f:
                 transitions = pkl.load(f)
                 for transition in transitions:
-                    if 'infos' in transition and 'grasp_penalty' in transition['infos']:
-                        transition['grasp_penalty'] = transition['infos']['grasp_penalty']
+                    if "infos" in transition and "grasp_penalty" in transition["infos"]:
+                        transition["grasp_penalty"] = transition["infos"][
+                            "grasp_penalty"
+                        ]
                     demo_buffer.insert(transition)
         print_green(f"demo buffer size: {len(demo_buffer)}")
         print_green(f"online buffer size: {len(replay_buffer)}")
-
+        # note replay buffer的断点续训，在线数据
         if FLAGS.checkpoint_path is not None and os.path.exists(
             os.path.join(FLAGS.checkpoint_path, "buffer")
         ):
@@ -477,7 +521,7 @@ def main(_):
             print_green(
                 f"Loaded previous buffer data. Replay buffer size: {len(replay_buffer)}"
             )
-
+        # note demo buffer的断点续训，之前训练过程中的在线干预数据
         if FLAGS.checkpoint_path is not None and os.path.exists(
             os.path.join(FLAGS.checkpoint_path, "demo_buffer")
         ):
@@ -501,7 +545,7 @@ def main(_):
             demo_buffer=demo_buffer,
             wandb_logger=wandb_logger,
         )
-
+    # note actor
     elif FLAGS.actor:
         sampling_rng = jax.device_put(sampling_rng, sharding.replicate())
         data_store = QueuedDataStore(50000)  # the queue size on the actor

@@ -145,6 +145,9 @@ def main(_):
         sample_action=env.action_space.sample(),
         image_keys=config.image_keys,
         encoder_type=config.encoder_type,
+        rsa_image_keys=config.rsa_image_keys,
+        rsa_scale_min=config.rsa_scale_min,
+        rsa_scale_max=config.rsa_scale_max,
     )
 
     # replicate agent across devices

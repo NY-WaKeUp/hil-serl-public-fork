@@ -1,5 +1,5 @@
 from abc import abstractmethod
-from typing import List
+from typing import List, Optional
 
 class DefaultTrainingConfig:
     """Default training configuration. """
@@ -32,6 +32,10 @@ class DefaultTrainingConfig:
     image_keys: List[str] = None
     classifier_keys: List[str] = None
     proprio_keys: List[str] = None
+    # Random Scale Augmentation (RSA) for wide-angle / fisheye cameras (CVPR 2026 robo-fisheye)
+    rsa_image_keys: Optional[List[str]] = None
+    rsa_scale_min: float = 0.7
+    rsa_scale_max: float = 1.3
     
     # "single-arm-learned-gripper", "dual-arm-learned-gripper" for with learned gripper, 
     # "single-arm-fixed-gripper", "dual-arm-fixed-gripper" for without learned gripper (i.e. pregrasped)

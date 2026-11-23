@@ -1,0 +1,27 @@
+{
+  "platform": "real",
+  "profile_name": "default_v1",
+  "seed": 0,
+  "policy_hz": 10.0,
+  "max_lin_vel": 0.02,
+  "max_ang_vel": 0.1,
+  "vel_ema_alpha": 0.08,
+  "num_steps": 225,
+  "duration_s": 22.5,
+  "q0": [
+    -1.0568102598190308,
+    -0.48808249831199646,
+    1.3184843063354492,
+    0.22961121797561646,
+    1.5413494110107422,
+    0.509096622467041,
+    1.0
+  ],
+  "robot_ip": "127.0.0.1",
+  "robot_port": 32085,
+  "tunnel": true,
+  "use_ros_gripper": false,
+  "use_tcp_gripper": true,
+  "gripper_ssh_host": "Manjaro",
+  "recorded_at": "2026-06-21T23:52:12"
+}
